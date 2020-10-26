@@ -1,0 +1,6 @@
+node_modules
+.idea
+.vscode
+.package.json
+reverse
+reverse.prj
