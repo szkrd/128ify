@@ -2,8 +2,10 @@ const fs = require('fs')
 const path = require('path')
 const childProcess = require('child_process')
 const ask = require('just-ask')
+const { log } = require('./src/utils')
 const args = process.argv.slice(2)
 const argKeepOrig = args.includes('--keep')
+const argNoAsk = args.includes('--stfu')
 
 function findInDir (dir, filter, fileList = []) {
   const files = fs.readdirSync(dir)
@@ -26,7 +28,7 @@ function getBitRate (fn) {
     probe = childProcess.execSync(cmd, { stdio: 'pipe', encoding: 'utf8' })
     probe = JSON.parse(probe)
   } catch (err) {
-    console.error(`ERR ffprobe failed at "${fn}"`)
+    log.error(`ffprobe failed at "${fn}"`)
   }
   return Math.floor((probe.format || { bit_rate: 0 }).bit_rate / 1000)
 }
@@ -47,14 +49,22 @@ async function main () {
   fileNames = fileNames.filter(fn => !/^\./.test(path.basename(fn))) // ignore dotfiles
 
   if (fileNames.length === 0) {
-    console.info('No files found.')
+    log.info('No files found.')
     return 0
   }
 
-  console.info(`INF found ${fileNames.length} music file(s)`)
-  const response = await ask('WARN I\'ll delete mp3ish dotfiles and do a recursive conversion, are you sure?')
-  if (!/^(y|yes)$/i.test(response)) {
-    return
+  log.info(`Found ${fileNames.length} music file(s)`)
+  if (!argNoAsk) {
+    const sub = argKeepOrig ? '' : ' AND the originals '
+    let response = await ask(`I'll delete mp3ish dotfiles${sub} + do a recursive conversion, are you sure? [y/n/i]`)
+    if (/^(i|info|h|help|\?)$/i.test(response)) {
+      log.info(fileNames.map(name => `▷ ${name}`).join('\n'))
+      response = await ask('May we continue? [y/n]')
+    }
+    if (!/^(y|yes)$/i.test(response)) {
+      log.info('Bye then')
+      return 0
+    }
   }
 
   // delete dotfiles with mp3ish file extensions
@@ -64,36 +74,36 @@ async function main () {
     const dotFn = `${dir}.${base}`
     const macFn = `${dir}._${base}`
     if (fs.existsSync(dotFn)) {
-      console.warn(`DEL ${dotFn}`)
+      log.warn(`Deleting ${dotFn}`)
       fs.unlinkSync(dotFn)
     }
     if (fs.existsSync(macFn)) {
-      console.warn(`DEL ${macFn}`)
+      log.warn(`Deleting ${macFn}`)
       fs.unlinkSync(macFn)
     }
   })
 
   fileNames = fileNames.filter(fn => getBitRate(fn) > 128)
-  console.info(`INF ${fileNames.length} of those have high bit rates`)
+  log.info(`Files with high bitrates: ${fileNames.length}`)
   fileNames.forEach(fn => {
     const target = getTargetName(fn)
     if (fs.existsSync(target)) {
-      console.info(`INF skipping "${fn}", target already exists`)
+      log.info(`Skipping "${fn}", target already exists`)
       return
     }
     // LAME is single threaded, so there's not much point in passing -threads
     const cmd = `ffmpeg -hide_banner -loglevel warning -y -i "${fn}" -map 0:a:0 -b:a 128k "${target}"`
     let output = ''
     let error = false
-    console.info(`INF converting "${fn}" --> ".../${target}"`)
+    log.info(`Converting "${fn}" --> ".../${target}"`)
     try {
       output = childProcess.execSync(cmd, { stdio: 'pipe' })
     } catch (err) {
       error = err
-      console.error('ERR', err, output)
+      log.error('Could not execute ffmpeg!', err, output)
     }
     if (!error && !argKeepOrig) {
-      console.warn(`DEL original "${fn}"`)
+      log.warn(`Deleting original "${fn}"`)
       fs.unlinkSync(fn)
     }
   })
@@ -101,4 +111,9 @@ async function main () {
 
 // ===
 
-main().catch(err => console.error)
+main().then(val => {
+  process.exit(val || 0)
+}).catch(err => {
+  log.error('Uncaught error in main promise!', err)
+  process.exit(1)
+})

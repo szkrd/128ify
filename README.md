@@ -17,7 +17,7 @@ Shellscript only works on Linux, this node script is meant to be crossplatform.
 ## TODO
 
 - [x] basic functionality (mirrors old shellscript)
-- [ ] shiny logging
+- [x] colors
 - [ ] parallel encoding
 - [ ] better rename
 - [ ] auto copy to sync dir
