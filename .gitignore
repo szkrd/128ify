@@ -1,6 +1,7 @@
 node_modules
 .idea
 .vscode
+!.vscode/tasks.json
 .package.json
 reverse
 reverse.prj

@@ -58,7 +58,7 @@ async function main () {
     const sub = argKeepOrig ? '' : ' AND the originals '
     let response = await ask(`I'll delete mp3ish dotfiles${sub} + do a recursive conversion, are you sure? [y/n/i]`)
     if (/^(i|info|h|help|\?)$/i.test(response)) {
-      log.info(fileNames.map(name => `▷ ${name}`).join('\n'))
+      log.info(fileNames.map(name => `* ${name}`).join('\n'))
       response = await ask('May we continue? [y/n]')
     }
     if (!/^(y|yes)$/i.test(response)) {
@@ -67,7 +67,7 @@ async function main () {
     }
   }
 
-  // delete dotfiles with mp3ish file extensions
+  // delete dotfiles with mp3ish file extensions (macos hidden metadata)
   fileNames.forEach(fn => {
     const base = path.basename(fn)
     const dir = fn.substr(0, fn.lastIndexOf(base))
@@ -83,14 +83,35 @@ async function main () {
     }
   })
 
-  fileNames = fileNames.filter(fn => getBitRate(fn) > 128)
+  // skip low bitrates (and rename orig)
+  fileNames = fileNames.filter(fn => {
+    const isHigh = getBitRate(fn) > 128
+    if (!isHigh) {
+      const target = getTargetName(fn)
+      fs.renameSync(fn, target)
+      log.info(`Skipping "${fn}", bitrate is already low enough (renaming)`)
+    }
+    return isHigh
+  })
+
+  // skip the ones that already have a .128.mp3 pair (and delete orig)
+  fileNames = fileNames.filter(fn => {
+    const target = getTargetName(fn)
+    if (fs.existsSync(target)) {
+      let postfix = ''
+      if (!argKeepOrig) {
+        fs.unlinkSync(fn)
+        postfix = ' (also deleted the original)'
+      }
+      log.info(`Skipping "${fn}", target .128.mp3 already exists${postfix}`)
+      return false
+    }
+    return true
+  })
+
   log.info(`Files with high bitrates: ${fileNames.length}`)
   fileNames.forEach(fn => {
     const target = getTargetName(fn)
-    if (fs.existsSync(target)) {
-      log.info(`Skipping "${fn}", target already exists`)
-      return
-    }
     // LAME is single threaded, so there's not much point in passing -threads
     const cmd = `ffmpeg -hide_banner -loglevel warning -y -i "${fn}" -map 0:a:0 -b:a 128k "${target}"`
     let output = ''
