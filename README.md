@@ -12,12 +12,27 @@ so:
 4. use a cloud player to download them to iDevice
 5. enjoy
 
+![screenshot in mintty](./docs/screenshot-mintty.png)
+
 Shellscript only works on Linux, this node script is meant to be crossplatform.
 
 ## TODO
 
 - [x] basic functionality (mirrors old shellscript)
 - [x] colors
-- [ ] parallel encoding
+- [x] parallel encoding
 - [ ] better rename
 - [ ] auto copy to sync dir
+
+## install
+
+Git clone, npm install, then create a shellscript somewhere on your path...
+
+```cmd
+@node %HOMEPATH%\Projects\personal\128ify %*
+```
+
+```sh
+#!/usr/bin/env bash
+node $HOME/Projects/personal/128ify "$@"
+```

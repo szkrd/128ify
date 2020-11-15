@@ -1,11 +1,14 @@
+const os = require('os')
 const fs = require('fs')
 const path = require('path')
 const childProcess = require('child_process')
 const ask = require('just-ask')
-const { log } = require('./src/utils')
+const { gray, greenBright } = require('chalk')
+const { log, sleep } = require('./src/utils')
 const args = process.argv.slice(2)
 const argKeepOrig = args.includes('--keep')
 const argNoAsk = args.includes('--stfu')
+const MAX_PARALLEL = Math.max(os.cpus().length, 2) - 1
 
 function findInDir (dir, filter, fileList = []) {
   const files = fs.readdirSync(dir)
@@ -110,24 +113,60 @@ async function main () {
   })
 
   log.info(`Files with high bitrates: ${fileNames.length}`)
-  fileNames.forEach(fn => {
+  let processedItemsCount = 0
+  let inProgressCount = 0
+  const convertFile = (fn, onFinish) => {
     const target = getTargetName(fn)
     // LAME is single threaded, so there's not much point in passing -threads
     const cmd = `ffmpeg -hide_banner -loglevel warning -y -i "${fn}" -map 0:a:0 -b:a 128k "${target}"`
-    let output = ''
-    let error = false
     log.info(`Converting "${fn}" --> ".../${target}"`)
-    try {
-      output = childProcess.execSync(cmd, { stdio: 'pipe' })
-    } catch (err) {
-      error = err
-      log.error('Could not execute ffmpeg!', err, output)
+    // first execute ffmpeg, then delete the old file
+    inProgressCount++
+    childProcess.exec(cmd, { stdio: 'pipe' }, (error, stdout, stderr) => {
+      if (error) {
+        log.error('Could not execute ffmpeg!', { error, stdout, stderr })
+        processedItemsCount++
+        inProgressCount--
+        return onFinish(error)
+      }
+      if (!argKeepOrig) {
+        log.warn(`Deleting original "${fn}"`)
+        fs.unlink(fn, (error, stdout, stderr) => {
+          if (error) {
+            log.error(`Could not delete "${fn}"`, { error, stdout, stderr })
+          }
+          processedItemsCount++
+          inProgressCount--
+          return onFinish(error)
+        })
+      }
+    })
+  }
+
+  // the main loop
+  log.info(`\nStart conversion, using ${MAX_PARALLEL} core(s)...`)
+  let currentItemIndex = 0
+  const pad = (s, p = '') => String(s).padStart(3, p)
+  while (processedItemsCount < fileNames.length) {
+    // if we have capacity, then start encoding another item
+    if (inProgressCount < MAX_PARALLEL && currentItemIndex < fileNames.length) {
+      const fn = fileNames[currentItemIndex++]
+      convertFile(fn, (error) => {
+        log.info(greenBright(
+          `#${pad(currentItemIndex)} Finished processing "${fn}"` +
+          `-> ${error ? 'ERROR' : 'OK'}`
+        ))
+      })
     }
-    if (!error && !argKeepOrig) {
-      log.warn(`Deleting original "${fn}"`)
-      fs.unlinkSync(fn)
-    }
-  })
+    // print progress at every tick
+    log.info(gray(
+      `[items: ${pad(fileNames.length)}, ` +
+      `processed: ${pad(processedItemsCount)}, ` +
+      `in progress: ${pad(inProgressCount)}] ` +
+      `${Math.round(processedItemsCount / fileNames.length * 100)}%`
+    ))
+    await sleep()
+  }
 }
 
 // ===
