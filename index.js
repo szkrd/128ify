@@ -8,6 +8,7 @@ const { log, sleep } = require('./src/utils')
 const args = process.argv.slice(2)
 const argKeepOrig = args.includes('--keep')
 const argNoAsk = args.includes('--stfu')
+const showHelp = args.includes('--help') || args.includes('-h')
 const MAX_PARALLEL = Math.max(os.cpus().length, 2) - 1
 
 function findInDir (dir, filter, fileList = []) {
@@ -47,6 +48,11 @@ function getTargetName (fn) {
 // ---
 
 async function main () {
+  if (showHelp) {
+    log.info('The script is interactive, will ask for confirmation before doing anything destructive.')
+    log.info('Params:\n--stfu = do not ask for confirmation\n--keep = do not delete the original files after the conversion')
+    return 0
+  }
   let fileNames = findInDir('.', /\.(mp3|flac|mpc|ogg)$/)
   fileNames = fileNames.filter(fn => fn.split('.').slice(-2)[0] !== '128') // ignore "foo.128.mp3" files
   fileNames = fileNames.filter(fn => !/^\./.test(path.basename(fn))) // ignore dotfiles
